@@ -1,186 +1,176 @@
 <!doctype html>
 <html lang="tr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-  <title>Gorlami Mobile</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <title>Gorlami — Dino Chase v2</title>
   <style>
-    html,body {
-      margin: 0; padding: 0;
-      height: 100%;
-      overflow: hidden;
-      background: #f7f7f7;
-      touch-action: none;
+    html,body{
+      height:100%;margin:0;padding:0;overflow:hidden;background:#f7f7f7;
+      -webkit-tap-highlight-color: transparent;
     }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(#f7f7f7,#eaeaea);
+    canvas{
+      display:block;width:100%;height:100%;touch-action:none;
+      background:linear-gradient(#f7f7f7,#eaeaea);
     }
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-
 <script>
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  let W = window.innerWidth, H = window.innerHeight;
   const DPR = window.devicePixelRatio || 1;
-
-  let W = window.innerWidth;
-  let H = window.innerHeight;
-
-  function resize() {
-    W = window.innerWidth;
-    H = window.innerHeight;
-    canvas.width = W * DPR;
-    canvas.height = H * DPR;
-    ctx.scale(DPR, DPR);
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W*DPR; canvas.height = H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
   }
   resize();
   window.addEventListener('resize', resize);
 
-  // Game state
-  let running = false;
+  const groundYRatio = 0.88;
+  let groundY = H*groundYRatio;
+  let running = true;
   let frame = 0;
-  let speed = 6;
   let score = 0;
-  let highScore = Number(localStorage.getItem('gorlami_high') || 0);
 
-  // Dino setup (ölçekli)
+  // Dino
   const dino = {
-    x: W * 0.1,
-    y: 0,
-    w: W * 0.08,
-    h: H * 0.12,
-    vy: 0,
-    gravity: H * 0.0015,
-    jumpForce: -H * 0.03,
-    grounded: true
+    x: W*0.18, y:0, w:W*0.08, h:H*0.12, vy:0,
+    gravity:H*0.0022, jump:-H*0.028, grounded:true,
+    slowUntil:0
   };
-  const groundY = H * 0.9;
+  dino.y = groundY - dino.h;
+
+  // Chaser
+  const chaser = {
+    x: dino.x - W*0.45, y:groundY - dino.h, w:dino.w, h:dino.h,
+    vy:0, gravity:dino.gravity, jump:-H*0.022, grounded:true
+  };
+
+  // Obstacles
   const obstacles = [];
-  let spawnTimer = 0;
-  let spawnInterval = 90;
+  let speed = 8, baseSpeed = 8;
+  let spawnTimer = 0, spawnInterval = 70;
 
-  function reset() {
-    running = true;
-    frame = 0;
-    speed = 6;
-    score = 0;
-    obstacles.length = 0;
-    dino.y = groundY - dino.h;
-    dino.vy = 0;
-    dino.grounded = true;
+  function rect(a,b){return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y;}
+
+  function spawnObstacle(){
+    const h = H*(0.05 + Math.random()*0.05);
+    const w = W*(0.04 + Math.random()*0.04);
+    obstacles.push({x:W+10,y:groundY-h,w,h,hit:false});
   }
 
-  function jump() {
-    if (!running) { reset(); return; }
-    if (dino.grounded) {
-      dino.vy = dino.jumpForce;
-      dino.grounded = false;
-    }
+  function reset(){
+    obstacles.length=0;
+    chaser.x = dino.x - W*0.45;
+    score=0; speed=baseSpeed; running=true;
   }
 
-  // Touch and click for jump
-  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, {passive:false});
-  canvas.addEventListener('mousedown', (e) => { e.preventDefault(); jump(); });
-
-  function spawnObstacle() {
-    const h = H * (0.05 + Math.random() * 0.07);
-    const w = W * (0.03 + Math.random() * 0.05);
-    obstacles.push({x: W + 20, y: groundY - h, w, h});
+  function tap(){
+    if(!running){reset();return;}
+    if(dino.grounded){dino.vy=dino.jump; dino.grounded=false;}
   }
+  canvas.addEventListener('touchstart',e=>{e.preventDefault();tap();},{passive:false});
+  canvas.addEventListener('mousedown',tap);
 
-  function update() {
-    if (!running) return;
+  function update(){
+    if(!running) return;
     frame++;
-    if (frame % 240 === 0) speed += 0.5;
+    score++;
 
+    // Dino physics
     dino.vy += dino.gravity;
     dino.y += dino.vy;
-    if (dino.y + dino.h >= groundY) {
-      dino.y = groundY - dino.h;
-      dino.vy = 0;
-      dino.grounded = true;
-    }
+    if(dino.y + dino.h >= groundY){dino.y=groundY-dino.h;dino.vy=0;dino.grounded=true;}
 
-    for (let i = obstacles.length-1; i >= 0; i--) {
-      obstacles[i].x -= speed;
-      if (obstacles[i].x + obstacles[i].w < -50) obstacles.splice(i,1);
-    }
+    // Chaser physics
+    chaser.vy += chaser.gravity;
+    chaser.y += chaser.vy;
+    if(chaser.y + chaser.h >= groundY){chaser.y=groundY-chaser.h;chaser.vy=0;chaser.grounded=true;}
 
+    // Spawn obstacles
     spawnTimer++;
-    if (spawnTimer > spawnInterval) {
-      spawnTimer = 0;
-      spawnInterval = 70 + Math.floor(Math.random()*80) - Math.min(40, Math.floor(score/100));
+    if(spawnTimer>spawnInterval){
+      spawnTimer=0; spawnInterval=60+Math.random()*40;
       spawnObstacle();
     }
 
-    if (frame % 5 === 0) score += 1;
-
-    for (const o of obstacles) {
-      if (rectIntersect(dino, o)) {
-        gameOver();
+    // Move obstacles
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o=obstacles[i];
+      o.x -= speed;
+      if(o.x+o.w<-50) obstacles.splice(i,1);
+      if(rect(dino,o) && !o.hit){
+        o.hit=true;
+        dino.slowUntil=frame+50; // yavaşlama 0.8s
+        speed = baseSpeed*0.6;
       }
     }
-  }
 
-  function rectIntersect(a,b){
-    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  }
+    // Yavaşlama bittiğinde normale dön
+    if(frame>dino.slowUntil && speed<baseSpeed) speed+=0.1;
 
-  function gameOver() {
-    running = false;
-    if (score > highScore) {
-      highScore = score;
-      localStorage.setItem('gorlami_high', highScore);
+    // Chaser davranışı
+    const desiredGap = (speed<baseSpeed*0.9)? W*0.15 : W*0.5;
+    const targetX = dino.x - desiredGap;
+    const diff = targetX - chaser.x;
+    chaser.x += diff*0.03 + 0.3; // yumuşak yaklaşma
+
+    // Chaser engel atlama AI
+    for(const o of obstacles){
+      const near = o.x - chaser.x - chaser.w;
+      if(near<80 && near>0 && chaser.grounded){
+        chaser.vy = chaser.jump;
+        chaser.grounded=false;
+      }
+    }
+
+    // Yakalanma kontrolü
+    if(chaser.x + chaser.w*0.9 >= dino.x){
+      running=false;
     }
   }
 
-  function draw() {
+  function draw(){
     ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="#f7f7f7";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#797979";
+    ctx.fillRect(0,groundY,W,H-groundY);
 
-    // Ground
-    ctx.fillStyle = '#797979';
-    ctx.fillRect(0, groundY, W, H - groundY);
-
-    // Dino
-    ctx.fillStyle = '#222';
-    ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(dino.x + dino.w - dino.w * 0.2, dino.y + dino.h * 0.2, dino.w * 0.1, dino.w * 0.1);
-
-    // Obstacles
-    for (const o of obstacles) {
-      ctx.fillStyle = '#444';
-      ctx.fillRect(o.x, o.y, o.w, o.h);
+    for(const o of obstacles){
+      ctx.fillStyle="#333"; ctx.fillRect(o.x,o.y,o.w,o.h);
     }
 
-    // Score
-    ctx.fillStyle = '#222';
-    ctx.font = `${Math.floor(H*0.03)}px monospace`;
-    ctx.fillText('Skor: ' + score, 20, 40);
-    ctx.fillText('En iyi: ' + highScore, 20, 80);
+    ctx.fillStyle="#b22";
+    ctx.fillRect(chaser.x,chaser.y,chaser.w,chaser.h);
 
-    if (!running) {
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillRect(W*0.1, H*0.4, W*0.8, H*0.15);
-      ctx.fillStyle = '#222';
-      ctx.font = `${Math.floor(H*0.04)}px sans-serif`;
-      ctx.fillText('Başlamak için ekrana dokun', W*0.15, H*0.48);
+    ctx.fillStyle="#222";
+    ctx.fillRect(dino.x,dino.y,dino.w,dino.h);
+
+    ctx.fillStyle="#111";
+    ctx.font=`${H*0.03}px monospace`;
+    ctx.fillText("Skor: "+score,20,30);
+
+    if(!running){
+      ctx.fillStyle="rgba(255,255,255,0.9)";
+      ctx.fillRect(W*0.2,H*0.4,W*0.6,H*0.2);
+      ctx.fillStyle="#b22";
+      ctx.font=`${H*0.06}px sans-serif`;
+      ctx.textAlign="center";
+      ctx.fillText("YAKALANDIN!",W/2,H*0.48);
+      ctx.fillStyle="#222";
+      ctx.font=`${H*0.03}px sans-serif`;
+      ctx.fillText("Tekrar için dokun",W/2,H*0.55);
+      ctx.textAlign="left";
     }
   }
 
-  function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
-  }
-
-  reset();
+  function loop(){update();draw();requestAnimationFrame(loop);}
   loop();
 })();
 </script>
